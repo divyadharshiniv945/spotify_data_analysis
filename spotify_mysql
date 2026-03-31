@@ -1,0 +1,80 @@
+import re
+from spotipy.oauth2 import SpotifyClientCredentials
+import spotipy
+import pandas as pd
+import matplotlib.pyplot as plt
+import mysql.connector
+
+# Set up Spotify API credentials
+sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+    client_id='ur client id', 
+    client_secret='ur client secret' 
+))
+
+# MySQL Database Connection
+db_config = {
+    'host': 'localhost',           # Change to your MySQL host
+    'user': 'root',       # Replace with your MySQL username
+    'password': '',   # Replace with your MySQL password
+    'database': 'spotify_db'       # Replace with your database name
+}
+
+# Connect to the database
+connection = mysql.connector.connect(**db_config)
+cursor = connection.cursor()
+
+# Full track URL (example: Shape of You by Ed Sheeran)
+
+playlist_url = "https://open.spotify.com/playlist/7L6mdgEKVTpXlr4UCuG6dt"
+
+# Extract playlist ID
+playlist_id = re.search(r'playlist/([a-zA-Z0-9]+)', playlist_url).group(1)
+
+# Fetch playlist details
+playlist = sp.playlist(playlist_id)
+
+
+
+# Extract metadata
+
+for item in playlist['tracks']['items']:
+    track = item['track']
+    track_data = {
+        'Track Name': track['name'],
+        'Artist': track['artists'][0]['name'],
+        'Album': track['album']['name'],
+        'Popularity': track['popularity'],
+        'Duration (minutes)': track['duration_ms'] / 60000,
+        'Year': track['album']['release_date'][:4]
+    }
+    insert_query = """
+INSERT INTO spotify_tracks (track_name, artist, album, popularity, duration_minutes, year)
+VALUES (%s, %s, %s, %s, %s, %s)
+"""
+
+    # Optional: check if track already exists to avoid duplicates
+    cursor.execute("SELECT * FROM spotify_tracks WHERE track_name=%s AND artist=%s", 
+                   (track_data['Track Name'], track_data['Artist']))
+    
+    if cursor.fetchone() is None:
+        cursor.execute(insert_query,(
+            track_data['Track Name'],
+            track_data['Artist'],
+            track_data['Album'],
+            track_data['Popularity'],
+            track_data['Duration (minutes)'],
+            track_data['Year'] ))
+
+
+
+connection.commit()
+print(f"{len(playlist['tracks']['items'])} tracks inserted into the database!")
+
+cursor.execute("SELECT * FROM spotify_tracks")
+all_rows = cursor.fetchall()
+for row in all_rows:
+    print(row)
+
+# Close the connection
+cursor.close()
+connection.close()
